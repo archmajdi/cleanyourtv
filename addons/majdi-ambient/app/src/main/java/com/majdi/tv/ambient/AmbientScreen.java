@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
@@ -87,8 +88,8 @@ final class AmbientScreen {
         glow = new GlowView(ctx);
         root.addView(glow, new FrameLayout.LayoutParams(-1, -1));
         content = new FrameLayout(ctx);
-        int pad = dp(56);
-        content.setPadding(pad, dp(44), pad, dp(44));
+        int pad = dp(44);
+        content.setPadding(pad, dp(36), pad, dp(36));
         root.addView(content, new FrameLayout.LayoutParams(-1, -1));
         build();
         loadCache();
@@ -136,6 +137,8 @@ final class AmbientScreen {
         dhikr = text(21, 75, light, Gravity.CENTER);
         dhikr.setMaxWidth((int) (res.getDisplayMetrics().widthPixels * 0.55f));
         dhikr.setLineSpacing(0, 1.25f);
+        dhikr.setBackground(frame());
+        dhikr.setPadding(dp(28), dp(16), dp(28), dp(16));
         FrameLayout.LayoutParams dl = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM);
         dl.bottomMargin = dp(110);
         content.addView(dhikr, dl);
@@ -155,8 +158,20 @@ final class AmbientScreen {
         LinearLayout l = new LinearLayout(ctx);
         l.setOrientation(LinearLayout.VERTICAL);
         l.setGravity(gravity);
+        l.setBackground(frame());
+        l.setPadding(dp(18), dp(14), dp(18), dp(14));
         content.addView(l, new FrameLayout.LayoutParams(-2, -2, gravity));
         return l;
+    }
+
+    /** A simple frame: a thin, faint white line around a slightly darker glass, with round corners. */
+    private GradientDrawable frame() {
+        GradientDrawable d = new GradientDrawable();
+        d.setShape(GradientDrawable.RECTANGLE);
+        d.setCornerRadius(dp(16));
+        d.setColor(0x33000000);
+        d.setStroke(Math.max(1, dp(1)), 0x2EFFFFFF);
+        return d;
     }
 
     private LinearLayout.LayoutParams gap(int topDp) {
