@@ -40,6 +40,8 @@ jobs:
           packages: platforms;android-34 build-tools;34.0.0
       - name: Build the launcher and the screensaver
         run: |
+          # One fixed debug key for every build, so a new APK installs over the old one.
+          mkdir -p ~/.android && cp .github/majdi-debug.keystore ~/.android/debug.keystore
           set +e
           fail=0
           for d in launcher addons/majdi-ambient; do
