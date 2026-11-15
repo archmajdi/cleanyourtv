@@ -41,7 +41,7 @@ jobs:
       - name: Build the launcher and the screensaver
         run: |
           # One fixed debug key for every build, so a new APK installs over the old one.
-          mkdir -p ~/.android && cp .github/majdi-debug.keystore ~/.android/debug.keystore
+          export MAJDI_KEYSTORE="$GITHUB_WORKSPACE/.github/majdi-debug.keystore"
           set +e
           fail=0
           for d in launcher addons/majdi-ambient; do
@@ -58,6 +58,7 @@ jobs:
           cp launcher/app/build/outputs/apk/release/app-release.apk out/tvhome-launcher.apk
           cp addons/majdi-ambient/app/build/outputs/apk/release/app-release.apk out/majdi-ambient.apk
           ls -la out
+          for a in out/*.apk; do echo "::notice title=signer $a::$($ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs $a | grep SHA-256 | head -1)"; done
       - uses: actions/upload-artifact@v4
         with:
           name: majdi-tv-apks

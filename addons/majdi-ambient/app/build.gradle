@@ -14,11 +14,20 @@ android {
         versionName '1.0'
     }
 
+    signingConfigs {
+        majdi {
+            storeFile file(System.getenv('MAJDI_KEYSTORE') ?: "${System.getProperty('user.home')}/.android/debug.keystore")
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             // Sideloaded over ADB like the launcher: signed with the debug key.
-            signingConfig signingConfigs.debug
+            signingConfig System.getenv('MAJDI_KEYSTORE') ? signingConfigs.majdi : signingConfigs.debug
         }
     }
 
