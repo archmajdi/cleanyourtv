@@ -30,6 +30,10 @@ jobs:
           id=$(curl -s -m 20 "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Al-Ahli%20Saudi" | python3 -c "import json,sys;d=json.load(sys.stdin).get('teams') or [];print(next((t['idTeam'] for t in d if 'Saudi' in (t.get('strCountry') or '')),''))" 2>/dev/null)
           echo "::notice title=team id::${id:-none}"
           probe searchAhli "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Al-Ahli"
+          probe searchAhli2 "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Al%20Ahli"
+          probe allSPL "https://www.thesportsdb.com/api/v1/json/123/search_all_teams.php?l=Saudi%20Pro%20League"
+          probe leagues "https://www.thesportsdb.com/api/v1/json/123/search_all_leagues.php?c=Saudi%20Arabia&s=Soccer"
+          curl -s -m 20 "https://www.thesportsdb.com/api/v1/json/123/search_all_teams.php?l=Saudi%20Pro%20League" | python3 -c "import json,sys;d=json.load(sys.stdin).get('teams') or [];print('::notice title=SPL teams::'+' | '.join(t['idTeam']+' '+t['strTeam'] for t in d))" || true
           [ -n "$id" ] && probe next "https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=$id"
           true
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
