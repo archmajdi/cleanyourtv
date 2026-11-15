@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- City: Riyadh. Change these three for another city. -->
+    <string name="latitude" translatable="false">24.7136</string>
+    <string name="longitude" translatable="false">46.6753</string>
+    <string name="place" translatable="false">الرياض</string>
+    <!-- Aladhan method 4 = Umm al-Qura (Makkah), the official calendar in Saudi Arabia. -->
+    <integer name="method">4</integer>
+
+    <!-- Each corner can be switched off. -->
+    <bool name="show_weather">true</bool>
+    <bool name="show_prayers">true</bool>
+    <bool name="show_adhkar">true</bool>
+    <bool name="show_gold">true</bool>
+    <bool name="show_usd">true</bool>
+    <bool name="show_match">true</bool>
+    <!-- TheSportsDB team id for Al-Ahli Saudi; empty = look it up by name the first time. -->
+    <string name="team_id" translatable="false"></string>
+    <string name="team_query" translatable="false">Al-Ahli Saudi</string>
+
+    <!-- Seconds each dhikr stays on screen. -->
+    <integer name="dhikr_seconds">40</integer>
+    <!-- 0 to 100: how bright the text is (lower is calmer, and kinder to the panel). -->
+    <integer name="text_alpha">78</integer>
+</resources>

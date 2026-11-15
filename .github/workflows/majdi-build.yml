@@ -1,0 +1,63 @@
+name: Majdi TV build
+
+# Personal build for one TV (Skyworth SWTV-22AE): the launcher with this branch's config.xml
+# and the majdi-ambient screensaver. Not for upstream.
+on:
+  push:
+    branches: [majdi]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Check the free APIs the screensaver uses
+        continue-on-error: true
+        run: |
+          probe() {
+            body=$(curl -s -m 20 -A "Mozilla/5.0 MajdiAmbient/1.0" "$2" | tr -d '\n\r' | cut -c1-400)
+            echo "::notice title=API $1::${body:-NO RESPONSE}"
+          }
+          probe aladhan "https://api.aladhan.com/v1/timings/$(TZ=Asia/Riyadh date +%d-%m-%Y)?latitude=24.7136&longitude=46.6753&method=4&calendarMethod=UAQ"
+          probe openmeteo "https://api.open-meteo.com/v1/forecast?latitude=24.7136&longitude=46.6753&current=temperature_2m,weather_code&timezone=auto"
+          probe gold "https://api.gold-api.com/price/XAU"
+          probe usd "https://open.er-api.com/v6/latest/USD"
+          probe team "https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=Al-Ahli%20Saudi"
+          id=$(curl -s -m 20 "https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=Al-Ahli%20Saudi" | python3 -c "import json,sys;d=json.load(sys.stdin).get('teams') or [];print(next((t['idTeam'] for t in d if 'Saudi' in (t.get('strCountry') or '')),''))" 2>/dev/null)
+          echo "::notice title=team id::${id:-none}"
+          [ -n "$id" ] && probe next "https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=$id"
+          true
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: platforms;android-34 build-tools;34.0.0
+      - name: Build the launcher and the screensaver
+        run: |
+          set +e
+          fail=0
+          for d in launcher addons/majdi-ambient; do
+            (cd "$d" && chmod +x gradlew && ./gradlew --no-daemon assembleRelease) > build.log 2>&1
+            if [ $? -ne 0 ]; then
+              fail=1
+              grep -E "error:|\.java:[0-9]+|What went wrong|Exception|AAPT|e: " build.log | head -30 | while IFS= read -r l; do echo "::error title=$d::$l"; done
+            fi
+          done
+          exit $fail
+      - name: Collect APKs
+        run: |
+          mkdir out
+          cp launcher/app/build/outputs/apk/release/app-release.apk out/tvhome-launcher.apk
+          cp addons/majdi-ambient/app/build/outputs/apk/release/app-release.apk out/majdi-ambient.apk
+          ls -la out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: majdi-tv-apks
+          path: out/*.apk
+          retention-days: 14
