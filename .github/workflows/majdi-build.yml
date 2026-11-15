@@ -56,7 +56,7 @@ jobs:
           cp launcher/app/build/outputs/apk/release/app-release.apk out/tvhome-launcher.apk
           cp addons/majdi-ambient/app/build/outputs/apk/release/app-release.apk out/majdi-ambient.apk
           ls -la out
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@v4
         with:
           name: majdi-tv-apks
           path: out/*.apk
