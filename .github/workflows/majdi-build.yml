@@ -26,10 +26,11 @@ jobs:
           probe openmeteo "https://api.open-meteo.com/v1/forecast?latitude=24.7136&longitude=46.6753&current=temperature_2m,weather_code&timezone=auto"
           probe gold "https://api.gold-api.com/price/XAU"
           probe usd "https://open.er-api.com/v6/latest/USD"
-          probe team "https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=Al-Ahli%20Saudi"
-          id=$(curl -s -m 20 "https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=Al-Ahli%20Saudi" | python3 -c "import json,sys;d=json.load(sys.stdin).get('teams') or [];print(next((t['idTeam'] for t in d if 'Saudi' in (t.get('strCountry') or '')),''))" 2>/dev/null)
+          probe team "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Al-Ahli%20Saudi"
+          id=$(curl -s -m 20 "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Al-Ahli%20Saudi" | python3 -c "import json,sys;d=json.load(sys.stdin).get('teams') or [];print(next((t['idTeam'] for t in d if 'Saudi' in (t.get('strCountry') or '')),''))" 2>/dev/null)
           echo "::notice title=team id::${id:-none}"
-          [ -n "$id" ] && probe next "https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=$id"
+          probe searchAhli "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Al-Ahli"
+          [ -n "$id" ] && probe next "https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=$id"
           true
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:

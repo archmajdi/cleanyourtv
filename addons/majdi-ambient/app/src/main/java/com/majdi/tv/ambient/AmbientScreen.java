@@ -473,7 +473,7 @@ final class AmbientScreen {
             if (TextUtils.isEmpty(id)) {
                 String q = java.net.URLEncoder.encode(res.getString(R.string.team_query), "UTF-8").replace("+", "%20");
                 JSONArray teams = new JSONObject(Net.get(
-                        "https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=" + q)).optJSONArray("teams");
+                        "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=" + q)).optJSONArray("teams");
                 if (teams != null) {
                     for (int i = 0; i < teams.length(); i++) {
                         JSONObject t = teams.getJSONObject(i);
@@ -486,7 +486,7 @@ final class AmbientScreen {
                 if (TextUtils.isEmpty(id)) return;
                 prefs.edit().putString("teamId", id).apply();
             }
-            String body = Net.get("https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=" + id);
+            String body = Net.get("https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=" + id);
             showMatch(body, id);
             prefs.edit().putString("match", body).apply();
             matchAt = System.currentTimeMillis();
