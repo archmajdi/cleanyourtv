@@ -26,16 +26,10 @@ jobs:
           probe openmeteo "https://api.open-meteo.com/v1/forecast?latitude=24.7136&longitude=46.6753&current=temperature_2m,weather_code&timezone=auto"
           probe gold "https://api.gold-api.com/price/XAU"
           probe usd "https://open.er-api.com/v6/latest/USD"
-          probe team "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Al-Ahli%20Saudi"
-          id=$(curl -s -m 20 "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Al-Ahli%20Saudi" | python3 -c "import json,sys;d=json.load(sys.stdin).get('teams') or [];print(next((t['idTeam'] for t in d if 'Saudi' in (t.get('strCountry') or '')),''))" 2>/dev/null)
-          echo "::notice title=team id::${id:-none}"
-          for q in "Al%20Ahli" "Al%20Ahli%20Saudi" "Al-Ahli%20Jeddah" "Al%20Ahli%20Jeddah" "Al-Ahli%20Saudi%20FC"; do
-            curl -s -m 20 "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=$q" | python3 -c "import json,sys;d=json.load(sys.stdin).get('teams') or [];print('::notice title=teams $q::'+' | '.join(t['idTeam']+' '+t['strTeam']+' / '+str(t.get('strCountry'))+' / '+str(t.get('strLeague')) for t in d) or 'none')" || true
-          done
-          probe nextArsenal "https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=133604"
-          probe nextLeagueSPL "https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=4668"
-          probe schedNext "https://www.thesportsdb.com/api/v2/json/schedule/next/team/133604"
-          [ -n "$id" ] && probe next "https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=$id"
+          probe ahliNext "https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=137721"
+          probe ahliLast "https://www.thesportsdb.com/api/v1/json/123/eventslast.php?id=137721"
+          probe splNext "https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=4668"
+          probe ahliSeason "https://www.thesportsdb.com/api/v1/json/123/eventsseason.php?id=4668&s=2026-2027"
           true
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:

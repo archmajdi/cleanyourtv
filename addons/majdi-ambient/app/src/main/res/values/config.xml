@@ -15,7 +15,7 @@
     <bool name="show_usd">true</bool>
     <bool name="show_match">true</bool>
     <!-- TheSportsDB team id for Al-Ahli Saudi; empty = look it up by name the first time. -->
-    <string name="team_id" translatable="false"></string>
+    <string name="team_id" translatable="false">137721</string>
     <string name="team_query" translatable="false">Al-Ahli Saudi</string>
 
     <!-- Seconds each dhikr stays on screen. -->
