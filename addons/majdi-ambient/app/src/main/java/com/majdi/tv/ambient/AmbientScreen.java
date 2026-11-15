@@ -124,6 +124,8 @@ final class AmbientScreen {
 
         LinearLayout bl = corner(Gravity.BOTTOM | Gravity.LEFT);
         gold = text(12, 55, regular, Gravity.LEFT);
+        gold.setSingleLine(false);
+        gold.setLineSpacing(dp(4), 1f);
         usd = text(12, 55, regular, Gravity.LEFT);
         bl.addView(gold);
         bl.addView(usd, gap(4));
@@ -290,7 +292,7 @@ final class AmbientScreen {
             String in = left >= 60 ? (left / 60) + " س " + (left % 60) + " د" : left + " د";
             nextPrayer.setText(NAMES[next] + "  " + clockText(times[next], h24) + "   ·   بعد " + in);
         } else {
-            nextPrayer.setText("الفجر غدًا");
+            nextPrayer.setText("الفجر غدًا  " + clockText(times[0], h24));
         }
         nextPrayer.setVisibility(View.VISIBLE);
 
@@ -440,7 +442,7 @@ final class AmbientScreen {
         double rate = prefs.getFloat("sar", 3.75f);
         long gram24 = Math.round(usdOunce * rate / 31.1034768);
         long gram21 = Math.round(usdOunce * rate / 31.1034768 * 21.0 / 24.0);
-        final String line = "الذهب  عيار 24: " + gram24 + "  ·  عيار 21: " + gram21 + "  ر.س/غ";
+        final String line = "ذهب عيار 24  ·  " + gram24 + " ر.س\nذهب عيار 21  ·  " + gram21 + " ر.س";
         post(() -> {
             gold.setText(line);
             gold.setVisibility(View.VISIBLE);
