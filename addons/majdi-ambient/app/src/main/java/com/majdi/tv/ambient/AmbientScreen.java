@@ -516,7 +516,7 @@ final class AmbientScreen {
                 String other = home ? e.optString("strAwayTeam") : e.optString("strHomeTeam");
                 SimpleDateFormat day = fmt("EEEE", AR);
                 SimpleDateFormat hm = fmt(DateFormat.is24HourFormat(ctx) ? "HH:mm" : "h:mm a", AR);
-                line = "الأهلي × " + other + "  ·  " + day.format(when) + " " + hm.format(when);
+                line = "الأهلي × " + arabicTeam(other) + "  ·  " + day.format(when) + " " + hm.format(when);
             }
         }
         final String text = line;
@@ -607,6 +607,21 @@ final class AmbientScreen {
         } catch (Exception e) {
             return fallback;
         }
+    }
+
+    private static final String[][] TEAMS = {
+            {"Al-Nassr", "النصر"}, {"Al-Hilal", "الهلال"}, {"Al-Ittihad", "الاتحاد"}, {"Al-Shabab", "الشباب"},
+            {"Al-Ettifaq", "الاتفاق"}, {"Al-Taawoun", "التعاون"}, {"Al-Fateh", "الفتح"}, {"Al-Fayha", "الفيحاء"},
+            {"Al-Qadsiah", "القادسية"}, {"Al-Khaleej", "الخليج"}, {"Al-Riyadh", "الرياض"}, {"Al-Okhdood", "الأخدود"},
+            {"Al-Akhdoud", "الأخدود"}, {"Damac", "ضمك"}, {"Al-Kholood", "الخلود"}, {"Al-Hazem", "الحزم"},
+            {"Al-Najma", "النجمة"}, {"Abha", "أبها"}, {"Al-Wehda", "الوحدة"}, {"Al-Raed", "الرائد"},
+            {"Al-Orobah", "العروبة"}, {"Al-Khalij", "الخليج"}, {"Neom", "نيوم"}, {"NEOM", "نيوم"},
+            {"Al-Taawon", "التعاون"}, {"Al-Wahda", "الوحدة"}, {"Al-Gharafa", "الغرافة"}, {"Al-Sadd", "السد"},
+    };
+
+    private static String arabicTeam(String name) {
+        for (String[] t : TEAMS) if (t[0].equalsIgnoreCase(name.trim())) return t[1];
+        return name;
     }
 
     private static String trimZero(String s) {
