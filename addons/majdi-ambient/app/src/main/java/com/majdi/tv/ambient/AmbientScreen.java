@@ -63,7 +63,9 @@ final class AmbientScreen {
     private final FrameLayout root;
     private final FrameLayout content;
     private final GlowView glow;
-    private TextView gold21, clock, date, hijriView, weather, match, nextPrayer, prayerRow, gold, usd, dhikr;
+    private TextView gold21, clock, date, hijriView, weather, weatherTemp, match, matchWhen, nextPrayer, gold, usd, dhikr;
+    private TextView[] prayerName, prayerTime;
+    private LinearLayout weatherBox, matchBox, prayerBox, goldBox;
 
     private volatile boolean running;
     private boolean destroyed;
@@ -88,8 +90,8 @@ final class AmbientScreen {
         glow = new GlowView(ctx);
         root.addView(glow, new FrameLayout.LayoutParams(-1, -1));
         content = new FrameLayout(ctx);
-        int pad = dp(44);
-        content.setPadding(pad, dp(36), pad, dp(36));
+        int pad = dp(40);
+        content.setPadding(pad, dp(32), pad, dp(32));
         root.addView(content, new FrameLayout.LayoutParams(-1, -1));
         build();
         loadCache();
@@ -106,61 +108,99 @@ final class AmbientScreen {
         Typeface light = Typeface.create("sans-serif-light", Typeface.NORMAL);
         Typeface regular = Typeface.create("sans-serif", Typeface.NORMAL);
 
-        LinearLayout tr = corner(Gravity.TOP | Gravity.RIGHT);
-        clock = text(46, 100, light, Gravity.RIGHT);
-        date = text(14, 70, regular, Gravity.RIGHT);
-        hijriView = text(12, 55, regular, Gravity.RIGHT);
+        // Top right: the time and both dates.
+        LinearLayout tr = box(Gravity.RIGHT);
+        clock = text(54, 100, light, Gravity.RIGHT);
+        date = text(19, 75, regular, Gravity.RIGHT);
+        hijriView = text(16, 60, regular, Gravity.RIGHT);
         tr.addView(clock);
-        tr.addView(date, gap(6));
-        tr.addView(hijriView, gap(3));
+        tr.addView(date, gap(8));
+        tr.addView(hijriView, gap(5));
+        content.addView(tr, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT));
 
-        LinearLayout tl = corner(Gravity.TOP | Gravity.LEFT);
-        weather = text(14, 70, regular, Gravity.LEFT);
-        match = text(12, 55, regular, Gravity.LEFT);
-        tl.addView(weather);
-        tl.addView(match, gap(6));
+        // Top left: weather, and Al-Ahli's next match under it.
+        LinearLayout left = new LinearLayout(ctx);
+        left.setOrientation(LinearLayout.VERTICAL);
+        left.setGravity(Gravity.LEFT);
+        weatherBox = box(Gravity.LEFT);
+        weatherTemp = text(44, 100, light, Gravity.LEFT);
+        weather = text(18, 70, regular, Gravity.LEFT);
+        weatherBox.addView(weatherTemp);
+        weatherBox.addView(weather, gap(6));
+        left.addView(weatherBox);
+        matchBox = box(Gravity.LEFT);
+        match = text(20, 85, regular, Gravity.LEFT);
+        matchWhen = text(16, 65, regular, Gravity.LEFT);
+        matchBox.addView(match);
+        matchBox.addView(matchWhen, gap(6));
+        LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-2, -2);
+        ml.topMargin = dp(14);
+        left.addView(matchBox, ml);
+        content.addView(left, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT));
 
-        LinearLayout br = corner(Gravity.BOTTOM | Gravity.RIGHT);
-        nextPrayer = text(15, 85, regular, Gravity.RIGHT);
-        prayerRow = text(11, 50, regular, Gravity.RIGHT);
-        br.addView(nextPrayer);
-        br.addView(prayerRow, gap(6));
+        // Bottom right: the next prayer, then the five prayers as columns (Fajr on the right).
+        prayerBox = box(Gravity.RIGHT);
+        nextPrayer = text(20, 90, regular, Gravity.RIGHT);
+        prayerBox.addView(nextPrayer);
+        LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        prayerName = new TextView[5];
+        prayerTime = new TextView[5];
+        for (int i = 0; i < 5; i++) {
+            LinearLayout cell = new LinearLayout(ctx);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            prayerName[i] = text(15, 60, regular, Gravity.CENTER_HORIZONTAL);
+            prayerTime[i] = text(21, 80, regular, Gravity.CENTER_HORIZONTAL);
+            prayerName[i].setSingleLine(true);
+            prayerTime[i].setSingleLine(true);
+            cell.addView(prayerName[i]);
+            cell.addView(prayerTime[i], gap(6));
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-2, -2);
+            if (i > 0) cl.setMarginStart(dp(26));
+            row.addView(cell, cl);
+        }
+        prayerBox.addView(row, gap(12));
+        content.addView(prayerBox, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.RIGHT));
 
-        LinearLayout bl = corner(Gravity.BOTTOM | Gravity.LEFT);
-        gold = text(12, 55, regular, Gravity.LEFT);
-        gold21 = text(12, 55, regular, Gravity.LEFT);
-        usd = text(12, 55, regular, Gravity.LEFT);
-        bl.addView(gold);
-        bl.addView(gold21, gap(4));
-        bl.addView(usd, gap(4));
+        // Bottom left: gold and the dollar.
+        goldBox = box(Gravity.LEFT);
+        gold = text(18, 85, regular, Gravity.LEFT);
+        gold21 = text(18, 85, regular, Gravity.LEFT);
+        usd = text(16, 65, regular, Gravity.LEFT);
+        goldBox.addView(gold);
+        goldBox.addView(gold21, gap(8));
+        goldBox.addView(usd, gap(8));
+        content.addView(goldBox, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.LEFT));
 
-        dhikr = text(21, 75, light, Gravity.CENTER);
-        dhikr.setMaxWidth((int) (res.getDisplayMetrics().widthPixels * 0.55f));
-        dhikr.setLineSpacing(0, 1.25f);
+        // The dhikr, in the middle of the screen.
+        dhikr = text(24, 80, light, Gravity.CENTER);
+        dhikr.setMaxWidth((int) (res.getDisplayMetrics().widthPixels * 0.50f));
+        dhikr.setLineSpacing(0, 1.3f);
         dhikr.setBackground(frame());
-        dhikr.setPadding(dp(28), dp(16), dp(28), dp(16));
-        FrameLayout.LayoutParams dl = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM);
-        dl.bottomMargin = dp(110);
+        dhikr.setPadding(dp(30), dp(18), dp(30), dp(18));
+        FrameLayout.LayoutParams dl = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
+        dl.topMargin = dp(10);
         content.addView(dhikr, dl);
 
-        weather.setVisibility(View.GONE);
-        match.setVisibility(View.GONE);
+        weatherBox.setVisibility(View.GONE);
+        matchBox.setVisibility(View.GONE);
+        goldBox.setVisibility(View.GONE);
         gold.setVisibility(View.GONE);
         gold21.setVisibility(View.GONE);
         usd.setVisibility(View.GONE);
-        nextPrayer.setVisibility(View.GONE);
-        prayerRow.setVisibility(View.GONE);
+        prayerBox.setVisibility(View.GONE);
         hijriView.setVisibility(View.GONE);
         if (!res.getBoolean(R.bool.show_adhkar)) dhikr.setVisibility(View.GONE);
     }
 
-    private LinearLayout corner(int gravity) {
+    private LinearLayout box(int gravity) {
         LinearLayout l = new LinearLayout(ctx);
         l.setOrientation(LinearLayout.VERTICAL);
         l.setGravity(gravity);
         l.setBackground(frame());
-        l.setPadding(dp(18), dp(14), dp(18), dp(14));
-        content.addView(l, new FrameLayout.LayoutParams(-2, -2, gravity));
+        l.setPadding(dp(22), dp(16), dp(22), dp(16));
         return l;
     }
 
@@ -319,16 +359,16 @@ final class AmbientScreen {
         else glow.setPalette(NIGHT, true);
     }
 
+    private static final int[] PRAYERS = {0, 2, 3, 4, 5}; // sunrise is not a prayer
+
     private void renderPrayers(boolean h24) {
         if (!res.getBoolean(R.bool.show_prayers) || times == null || !today().equals(timesDay)) {
-            nextPrayer.setVisibility(View.GONE);
-            prayerRow.setVisibility(View.GONE);
+            prayerBox.setVisibility(View.GONE);
             return;
         }
         int now = minutesNow();
         int next = -1;
-        for (int i = 0; i < KEYS.length; i++) {
-            if (i == 1) continue; // sunrise is not a prayer
+        for (int i : PRAYERS) {
             if (toMinutes(times[i], -1) > now) {
                 next = i;
                 break;
@@ -337,20 +377,22 @@ final class AmbientScreen {
         if (next >= 0) {
             int left = toMinutes(times[next], now) - now;
             String in = left >= 60 ? (left / 60) + " س " + (left % 60) + " د" : left + " د";
-            nextPrayer.setText(NAMES[next] + "  " + clockText(times[next], h24) + "   ·   بعد " + in);
+            nextPrayer.setText(NAMES[next] + " بعد " + in);
         } else {
             nextPrayer.setText("الفجر غدًا  " + clockText(times[0], h24));
         }
-        nextPrayer.setVisibility(View.VISIBLE);
-
-        StringBuilder row = new StringBuilder();
-        for (int i = 0; i < KEYS.length; i++) {
-            if (i == 1) continue;
-            if (row.length() > 0) row.append("    ");
-            row.append(NAMES[i]).append(' ').append(clockText(times[i], h24));
+        int highlight = next >= 0 ? next : 0;
+        int bright = Math.round(255f * alpha / 100f);
+        int dim = Math.round(255f * alpha / 100f * 0.55f);
+        for (int c = 0; c < PRAYERS.length; c++) {
+            int i = PRAYERS[c];
+            boolean on = i == highlight;
+            prayerName[c].setText(NAMES[i]);
+            prayerTime[c].setText(clockText(times[i], h24));
+            prayerName[c].setTextColor(Color.argb(on ? bright : dim, 255, 255, 255));
+            prayerTime[c].setTextColor(Color.argb(on ? bright : dim, 255, 255, 255));
         }
-        prayerRow.setText(row.toString());
-        prayerRow.setVisibility(View.VISIBLE);
+        prayerBox.setVisibility(View.VISIBLE);
     }
 
     private static String clockText(String hhmm, boolean h24) {
@@ -452,10 +494,12 @@ final class AmbientScreen {
         JSONObject cur = new JSONObject(body).getJSONObject("current");
         long temp = Math.round(cur.getDouble("temperature_2m"));
         String sky = sky(cur.optInt("weather_code", -1));
-        final String line = temp + "°" + (sky.isEmpty() ? "" : "  " + sky) + "  ·  " + res.getString(R.string.place);
+        final String tempText = temp + "°";
+        final String line = (sky.isEmpty() ? "" : sky + "  ·  ") + res.getString(R.string.place);
         post(() -> {
+            weatherTemp.setText(tempText);
             weather.setText(line);
-            weather.setVisibility(View.VISIBLE);
+            weatherBox.setVisibility(View.VISIBLE);
         });
     }
 
@@ -496,6 +540,7 @@ final class AmbientScreen {
             gold21.setText(line21);
             gold.setVisibility(View.VISIBLE);
             gold21.setVisibility(View.VISIBLE);
+            goldBox.setVisibility(View.VISIBLE);
         });
     }
 
@@ -516,6 +561,7 @@ final class AmbientScreen {
         post(() -> {
             usd.setText(line);
             usd.setVisibility(View.VISIBLE);
+            goldBox.setVisibility(View.VISIBLE);
         });
     }
 
@@ -568,16 +614,18 @@ final class AmbientScreen {
                 String other = home ? e.optString("strAwayTeam") : e.optString("strHomeTeam");
                 SimpleDateFormat day = fmt("EEEE", AR);
                 SimpleDateFormat hm = fmt(DateFormat.is24HourFormat(ctx) ? "HH:mm" : "h:mm a", AR);
-                line = "الأهلي × " + arabicTeam(other) + "  ·  " + day.format(when) + " " + hm.format(when);
+                line = "الأهلي × " + arabicTeam(other) + "\n" + day.format(when) + "  " + hm.format(when);
             }
         }
         final String text = line;
         post(() -> {
             if (text == null) {
-                match.setVisibility(View.GONE);
+                matchBox.setVisibility(View.GONE);
             } else {
-                match.setText(text);
-                match.setVisibility(View.VISIBLE);
+                String[] parts = text.split("\n", 2);
+                match.setText(parts[0]);
+                matchWhen.setText(parts.length > 1 ? parts[1] : "");
+                matchBox.setVisibility(View.VISIBLE);
             }
         });
     }
