@@ -61,7 +61,7 @@ final class AmbientScreen {
 
     private final FrameLayout root;
     private final FrameLayout content;
-    private TextView clock, date, hijriView, weather, match, nextPrayer, prayerRow, gold, usd, dhikr;
+    private TextView gold21, clock, date, hijriView, weather, match, nextPrayer, prayerRow, gold, usd, dhikr;
 
     private volatile boolean running;
     private boolean destroyed;
@@ -124,10 +124,10 @@ final class AmbientScreen {
 
         LinearLayout bl = corner(Gravity.BOTTOM | Gravity.LEFT);
         gold = text(12, 55, regular, Gravity.LEFT);
-        gold.setSingleLine(false);
-        gold.setLineSpacing(dp(4), 1f);
+        gold21 = text(12, 55, regular, Gravity.LEFT);
         usd = text(12, 55, regular, Gravity.LEFT);
         bl.addView(gold);
+        bl.addView(gold21, gap(4));
         bl.addView(usd, gap(4));
 
         dhikr = text(21, 75, light, Gravity.CENTER);
@@ -140,6 +140,7 @@ final class AmbientScreen {
         weather.setVisibility(View.GONE);
         match.setVisibility(View.GONE);
         gold.setVisibility(View.GONE);
+        gold21.setVisibility(View.GONE);
         usd.setVisibility(View.GONE);
         nextPrayer.setVisibility(View.GONE);
         prayerRow.setVisibility(View.GONE);
@@ -442,10 +443,13 @@ final class AmbientScreen {
         double rate = prefs.getFloat("sar", 3.75f);
         long gram24 = Math.round(usdOunce * rate / 31.1034768);
         long gram21 = Math.round(usdOunce * rate / 31.1034768 * 21.0 / 24.0);
-        final String line = "ذهب عيار 24  ·  " + gram24 + " ر.س\nذهب عيار 21  ·  " + gram21 + " ر.س";
+        final String line24 = "ذهب عيار 24  ·  " + gram24 + " ر.س";
+        final String line21 = "ذهب عيار 21  ·  " + gram21 + " ر.س";
         post(() -> {
-            gold.setText(line);
+            gold.setText(line24);
+            gold21.setText(line21);
             gold.setVisibility(View.VISIBLE);
+            gold21.setVisibility(View.VISIBLE);
         });
     }
 
