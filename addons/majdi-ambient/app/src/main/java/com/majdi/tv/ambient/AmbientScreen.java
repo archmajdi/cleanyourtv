@@ -176,12 +176,12 @@ final class AmbientScreen {
 
         // The dhikr, in the middle of the screen.
         dhikr = text(24, 80, light, Gravity.CENTER);
-        dhikr.setMaxWidth((int) (res.getDisplayMetrics().widthPixels * 0.50f));
+        dhikr.setMaxWidth((int) (res.getDisplayMetrics().widthPixels * 0.46f));
         dhikr.setLineSpacing(0, 1.3f);
         dhikr.setBackground(frame());
         dhikr.setPadding(dp(30), dp(18), dp(30), dp(18));
         FrameLayout.LayoutParams dl = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
-        dl.topMargin = dp(10);
+        dl.topMargin = dp(36);
         content.addView(dhikr, dl);
 
         weatherBox.setVisibility(View.GONE);
