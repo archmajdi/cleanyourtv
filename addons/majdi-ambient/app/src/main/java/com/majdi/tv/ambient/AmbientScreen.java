@@ -61,6 +61,7 @@ final class AmbientScreen {
 
     private final FrameLayout root;
     private final FrameLayout content;
+    private final GlowView glow;
     private TextView gold21, clock, date, hijriView, weather, match, nextPrayer, prayerRow, gold, usd, dhikr;
 
     private volatile boolean running;
@@ -83,6 +84,8 @@ final class AmbientScreen {
 
         root = new FrameLayout(ctx);
         root.setBackgroundColor(Color.BLACK);
+        glow = new GlowView(ctx);
+        root.addView(glow, new FrameLayout.LayoutParams(-1, -1));
         content = new FrameLayout(ctx);
         int pad = dp(56);
         content.setPadding(pad, dp(44), pad, dp(44));
@@ -171,6 +174,7 @@ final class AmbientScreen {
         t.setGravity(gravity);
         t.setIncludeFontPadding(false);
         t.setSingleLine(gravity != Gravity.CENTER);
+        t.setShadowLayer(dp(8), 0, 0, 0xAA000000);
         return t;
     }
 
@@ -184,12 +188,14 @@ final class AmbientScreen {
         if (destroyed || running) return;
         running = true;
         main.removeCallbacksAndMessages(null);
+        glow.setRunning(true);
         tick.run();
         nextDhikr.run();
     }
 
     void stop() {
         running = false;
+        glow.setRunning(false);
         main.removeCallbacksAndMessages(null);
     }
 
@@ -271,6 +277,31 @@ final class AmbientScreen {
             hijriView.setVisibility(View.VISIBLE);
         }
         renderPrayers(h24);
+        renderSky();
+    }
+
+    // Dawn, day, golden afternoon, sunset, night: the glow's colours follow the prayer times.
+    private static final int[] DAWN = {0xFF3A4FA0, 0xFF9A4A72, 0xFFB8744A};
+    private static final int[] DAY = {0xFF0E6A88, 0xFF1F4FA8, 0xFF1F7A6A};
+    private static final int[] GOLDEN = {0xFFB0682E, 0xFF8E3A48, 0xFF4E3A86};
+    private static final int[] DUSK = {0xFF3B2B7A, 0xFF7A3468, 0xFF1E4A7A};
+    private static final int[] NIGHT = {0xFF1E2A6E, 0xFF4A2A7A, 0xFF0F4C5C};
+
+    private void renderSky() {
+        int now = minutesNow();
+        int fajr = 290, sunrise = 370, asr = 900, maghrib = 1030, isha = 1120;
+        if (times != null) {
+            fajr = toMinutes(times[0], fajr);
+            sunrise = toMinutes(times[1], sunrise);
+            asr = toMinutes(times[3], asr);
+            maghrib = toMinutes(times[4], maghrib);
+            isha = toMinutes(times[5], isha);
+        }
+        if (now >= fajr && now < sunrise + 30) glow.setPalette(DAWN, false);
+        else if (now >= sunrise + 30 && now < asr) glow.setPalette(DAY, false);
+        else if (now >= asr && now < maghrib) glow.setPalette(GOLDEN, false);
+        else if (now >= maghrib && now < isha) glow.setPalette(DUSK, true);
+        else glow.setPalette(NIGHT, true);
     }
 
     private void renderPrayers(boolean h24) {
