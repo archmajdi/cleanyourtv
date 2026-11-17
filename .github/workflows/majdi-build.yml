@@ -24,6 +24,8 @@ jobs:
           }
           probe aladhan "https://api.aladhan.com/v1/timings/$(TZ=Asia/Riyadh date +%d-%m-%Y)?latitude=24.7136&longitude=46.6753&method=4&calendarMethod=UAQ"
           probe openmeteo "https://api.open-meteo.com/v1/forecast?latitude=24.7136&longitude=46.6753&current=temperature_2m,weather_code&timezone=auto"
+          probe ramadan "https://api.aladhan.com/v1/hToG/01-09-1448?calendarMethod=UAQ"
+          probe forecast "https://api.open-meteo.com/v1/forecast?latitude=24.7136&longitude=46.6753&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=7&timezone=Asia%2FRiyadh"
           probe gold "https://api.gold-api.com/price/XAU"
           probe usd "https://open.er-api.com/v6/latest/USD"
           probe ahliNext "https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=137721"

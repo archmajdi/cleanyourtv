@@ -9,7 +9,6 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
-import android.text.format.DateFormat;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -33,12 +32,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * A calm, mostly empty black screen. Four small corners and one line of dhikr:
- * top right   clock, Gregorian and Hijri date
- * top left    weather, Al-Ahli's next match
- * bottom right next prayer with a countdown, today's five prayers
- * bottom left gold and the dollar in riyals
- * The whole layout drifts a few pixels every minute so nothing burns into the panel.
+ * Dashboard-style screensaver, laid out like a wall clock:
+ *   top right   big clock, date line, Ramadan countdown and Al-Ahli, gold and the dollar
+ *   top left    the next prayer: time, time left, time since the last one
+ *   middle      the five prayers in one row, the next one framed
+ *   bottom      Riyadh's weather now and the next seven days
+ *   last line   one quiet dhikr
+ * Everything drifts a few pixels each minute so nothing burns into the panel.
  */
 final class AmbientScreen {
     private static final String TAG = "MajdiAmbient";
@@ -48,8 +48,13 @@ final class AmbientScreen {
 
     private static final String[] KEYS = {"Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"};
     private static final String[] NAMES = {"الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء"};
+    private static final int[] PRAYERS = {0, 2, 3, 4, 5};
     private static final Locale AR = Locale.forLanguageTag("ar-u-nu-latn");
     private static final TimeZone RIYADH = TimeZone.getTimeZone("Asia/Riyadh");
+
+    private static final int ACCENT = 0xFFA9CCFF;
+    private static final int CARD_FILL = 0x7012204A;
+    private static final int CARD_LINE = 0x665F86E8;
 
     private final Context ctx;
     private final Resources res;
@@ -58,23 +63,32 @@ final class AmbientScreen {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Random rnd = new Random();
     private final float density;
-    private final int alpha;
+    private final float level;
+    private final Typeface light = Typeface.create("sans-serif-light", Typeface.NORMAL);
+    private final Typeface regular = Typeface.create("sans-serif", Typeface.NORMAL);
+    private final Typeface medium = Typeface.create("sans-serif-medium", Typeface.NORMAL);
 
     private final FrameLayout root;
-    private final FrameLayout content;
+    private final LinearLayout content;
     private final GlowView glow;
-    private TextView gold21, clock, date, hijriView, weather, weatherTemp, match, matchWhen, nextPrayer, gold, usd, dhikr;
-    private TextView[] prayerName, prayerTime;
-    private LinearLayout weatherBox, matchBox, prayerBox, goldBox;
+
+    private TextView clock, ampm, dateLine, ramadanLine, marketLine, dhikr;
+    private TextView nextName, nextTime, nextLeft, sinceLast;
+    private LinearLayout nextCard, prayerCard, weatherCard, weatherDays;
+    private final LinearLayout[] prayerCell = new LinearLayout[5];
+    private final TextView[] prayerName = new TextView[5];
+    private final TextView[] prayerTime = new TextView[5];
+    private TextView cityName, cityNow;
 
     private volatile boolean running;
     private boolean destroyed;
 
-    // Data, filled from the cache first, then from the network.
-    private String[] times; // HH:mm for KEYS
-    private String timesDay; // dd-MM-yyyy the times are for
-    private String hijri = "";
-    private long weatherAt, goldAt, usdAt, matchAt, prayersAt;
+    private String[] times;
+    private String timesDay;
+    private String hijriText = "";
+    private int hijriDay, hijriMonth, hijriYear;
+    private String ramadanText = "", matchText = "", goldText = "", usdText = "";
+    private long weatherAt, goldAt, usdAt, matchAt, prayersAt, ramadanAt;
     private int dhikrIndex;
 
     AmbientScreen(Context context) {
@@ -82,16 +96,18 @@ final class AmbientScreen {
         res = context.getResources();
         prefs = context.getSharedPreferences("ambient", Context.MODE_PRIVATE);
         density = res.getDisplayMetrics().density;
-        alpha = Math.max(20, Math.min(100, res.getInteger(R.integer.text_alpha)));
+        level = Math.max(20, Math.min(100, res.getInteger(R.integer.text_alpha) + 15)) / 100f;
         dhikrIndex = rnd.nextInt(100);
 
         root = new FrameLayout(ctx);
-        root.setBackgroundColor(Color.BLACK);
+        root.setBackgroundColor(0xFF060A18);
         glow = new GlowView(ctx);
         root.addView(glow, new FrameLayout.LayoutParams(-1, -1));
-        content = new FrameLayout(ctx);
-        int pad = dp(40);
-        content.setPadding(pad, dp(32), pad, dp(32));
+        content = new LinearLayout(ctx);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_VERTICAL);
+        content.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        content.setPadding(dp(48), dp(30), dp(48), dp(24));
         root.addView(content, new FrameLayout.LayoutParams(-1, -1));
         build();
         loadCache();
@@ -105,132 +121,153 @@ final class AmbientScreen {
     // ---------------------------------------------------------------- layout
 
     private void build() {
-        Typeface light = Typeface.create("sans-serif-light", Typeface.NORMAL);
-        Typeface regular = Typeface.create("sans-serif", Typeface.NORMAL);
+        // Top: clock column on the right, next-prayer card on the left (RTL row).
+        LinearLayout top = new LinearLayout(ctx);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
 
-        // Top right: the time and both dates.
-        LinearLayout tr = box(Gravity.RIGHT);
-        clock = text(54, 100, light, Gravity.RIGHT);
-        date = text(19, 75, regular, Gravity.RIGHT);
-        hijriView = text(16, 60, regular, Gravity.RIGHT);
-        tr.addView(clock);
-        tr.addView(date, gap(8));
-        tr.addView(hijriView, gap(5));
-        content.addView(tr, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT));
+        LinearLayout clockCol = new LinearLayout(ctx);
+        clockCol.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout clockRow = new LinearLayout(ctx);
+        clockRow.setOrientation(LinearLayout.HORIZONTAL);
+        clockRow.setGravity(Gravity.BOTTOM);
+        clock = text(66, 100, light, ACCENT);
+        ampm = text(20, 85, regular, ACCENT);
+        clockRow.addView(clock);
+        LinearLayout.LayoutParams al = wrap();
+        al.setMarginStart(dp(10));
+        al.bottomMargin = dp(10);
+        clockRow.addView(ampm, al);
+        clockCol.addView(clockRow);
+        dateLine = text(19, 90, regular, Color.WHITE);
+        ramadanLine = text(17, 80, regular, Color.WHITE);
+        marketLine = text(16, 70, regular, Color.WHITE);
+        clockCol.addView(dateLine, gap(10));
+        clockCol.addView(ramadanLine, gap(10));
+        clockCol.addView(marketLine, gap(8));
+        top.addView(clockCol, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        // Top left: weather, and Al-Ahli's next match under it.
-        LinearLayout left = new LinearLayout(ctx);
-        left.setOrientation(LinearLayout.VERTICAL);
-        left.setGravity(Gravity.LEFT);
-        weatherBox = box(Gravity.LEFT);
-        weatherTemp = text(44, 100, light, Gravity.LEFT);
-        weather = text(18, 70, regular, Gravity.LEFT);
-        weatherBox.addView(weatherTemp);
-        weatherBox.addView(weather, gap(6));
-        left.addView(weatherBox);
-        matchBox = box(Gravity.LEFT);
-        match = text(20, 85, regular, Gravity.LEFT);
-        matchWhen = text(16, 65, regular, Gravity.LEFT);
-        matchBox.addView(match);
-        matchBox.addView(matchWhen, gap(6));
-        LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-2, -2);
-        ml.topMargin = dp(14);
-        left.addView(matchBox, ml);
-        content.addView(left, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT));
+        nextCard = card();
+        nextCard.setMinimumWidth(dp(330));
+        TextView head = text(15, 70, regular, Color.WHITE);
+        head.setText("الصلاة القادمة");
+        LinearLayout nameRow = new LinearLayout(ctx);
+        nameRow.setOrientation(LinearLayout.HORIZONTAL);
+        nameRow.setGravity(Gravity.BOTTOM);
+        nextName = text(32, 100, medium, Color.WHITE);
+        nextTime = text(20, 85, regular, Color.WHITE);
+        nameRow.addView(nextName);
+        LinearLayout.LayoutParams tl = wrap();
+        tl.setMarginStart(dp(16));
+        tl.bottomMargin = dp(4);
+        nameRow.addView(nextTime, tl);
+        nextLeft = text(20, 100, regular, ACCENT);
+        sinceLast = text(14, 65, regular, Color.WHITE);
+        nextCard.addView(head);
+        nextCard.addView(nameRow, gap(10));
+        nextCard.addView(nextLeft, gap(10));
+        nextCard.addView(sinceLast, gap(8));
+        top.addView(nextCard, wrap());
+        content.addView(top, new LinearLayout.LayoutParams(-1, -2));
 
-        // Bottom right: the next prayer, then the five prayers as columns (Fajr on the right).
-        prayerBox = box(Gravity.RIGHT);
-        nextPrayer = text(20, 90, regular, Gravity.RIGHT);
-        prayerBox.addView(nextPrayer);
-        LinearLayout row = new LinearLayout(ctx);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        prayerName = new TextView[5];
-        prayerTime = new TextView[5];
-        for (int i = 0; i < 5; i++) {
+        // Middle: the five prayers.
+        prayerCard = card();
+        prayerCard.setOrientation(LinearLayout.HORIZONTAL);
+        prayerCard.setPadding(dp(10), dp(10), dp(10), dp(10));
+        for (int c = 0; c < 5; c++) {
             LinearLayout cell = new LinearLayout(ctx);
             cell.setOrientation(LinearLayout.VERTICAL);
-            cell.setGravity(Gravity.CENTER_HORIZONTAL);
-            prayerName[i] = text(15, 60, regular, Gravity.CENTER_HORIZONTAL);
-            prayerTime[i] = text(21, 80, regular, Gravity.CENTER_HORIZONTAL);
-            prayerName[i].setSingleLine(true);
-            prayerTime[i].setSingleLine(true);
-            cell.addView(prayerName[i]);
-            cell.addView(prayerTime[i], gap(6));
-            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-2, -2);
-            if (i > 0) cl.setMarginStart(dp(26));
-            row.addView(cell, cl);
+            cell.setGravity(Gravity.CENTER);
+            cell.setPadding(0, dp(10), 0, dp(10));
+            prayerName[c] = text(17, 85, regular, Color.WHITE);
+            prayerTime[c] = text(24, 100, regular, Color.WHITE);
+            prayerName[c].setGravity(Gravity.CENTER);
+            prayerTime[c].setGravity(Gravity.CENTER);
+            cell.addView(prayerName[c]);
+            cell.addView(prayerTime[c], gap(8));
+            prayerCell[c] = cell;
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(0, -2, 1f);
+            cl.setMarginStart(c == 0 ? 0 : dp(8));
+            prayerCard.addView(cell, cl);
         }
-        prayerBox.addView(row, gap(12));
-        content.addView(prayerBox, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.RIGHT));
+        LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(-1, -2);
+        pl.topMargin = dp(22);
+        content.addView(prayerCard, pl);
 
-        // Bottom left: gold and the dollar.
-        goldBox = box(Gravity.LEFT);
-        gold = text(18, 85, regular, Gravity.LEFT);
-        gold21 = text(18, 85, regular, Gravity.LEFT);
-        usd = text(16, 65, regular, Gravity.LEFT);
-        goldBox.addView(gold);
-        goldBox.addView(gold21, gap(8));
-        goldBox.addView(usd, gap(8));
-        content.addView(goldBox, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.LEFT));
+        // Bottom: weather for the city, now and the next days.
+        weatherCard = card();
+        weatherCard.setOrientation(LinearLayout.HORIZONTAL);
+        weatherCard.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout city = new LinearLayout(ctx);
+        city.setOrientation(LinearLayout.VERTICAL);
+        cityName = text(22, 100, medium, Color.WHITE);
+        cityName.setText(res.getString(R.string.place));
+        cityNow = text(24, 100, regular, ACCENT);
+        city.addView(cityName);
+        city.addView(cityNow, gap(8));
+        weatherCard.addView(city, new LinearLayout.LayoutParams(dp(150), -2));
+        weatherDays = new LinearLayout(ctx);
+        weatherDays.setOrientation(LinearLayout.HORIZONTAL);
+        weatherCard.addView(weatherDays, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(-1, -2);
+        wl.topMargin = dp(18);
+        content.addView(weatherCard, wl);
 
-        // The dhikr, in the middle of the screen.
-        dhikr = text(24, 80, light, Gravity.CENTER);
-        dhikr.setMaxWidth((int) (res.getDisplayMetrics().widthPixels * 0.46f));
-        dhikr.setLineSpacing(0, 1.3f);
-        dhikr.setBackground(frame());
-        dhikr.setPadding(dp(30), dp(18), dp(30), dp(18));
-        FrameLayout.LayoutParams dl = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
-        dl.topMargin = dp(36);
+        // Last line: the dhikr.
+        dhikr = text(18, 70, light, Color.WHITE);
+        dhikr.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-1, -2);
+        dl.topMargin = dp(18);
         content.addView(dhikr, dl);
 
-        weatherBox.setVisibility(View.GONE);
-        matchBox.setVisibility(View.GONE);
-        goldBox.setVisibility(View.GONE);
-        gold.setVisibility(View.GONE);
-        gold21.setVisibility(View.GONE);
-        usd.setVisibility(View.GONE);
-        prayerBox.setVisibility(View.GONE);
-        hijriView.setVisibility(View.GONE);
+        nextCard.setVisibility(View.INVISIBLE);
+        prayerCard.setVisibility(View.GONE);
+        weatherCard.setVisibility(View.GONE);
+        ramadanLine.setVisibility(View.GONE);
+        marketLine.setVisibility(View.GONE);
         if (!res.getBoolean(R.bool.show_adhkar)) dhikr.setVisibility(View.GONE);
     }
 
-    private LinearLayout box(int gravity) {
+    private LinearLayout card() {
         LinearLayout l = new LinearLayout(ctx);
         l.setOrientation(LinearLayout.VERTICAL);
-        l.setGravity(gravity);
-        l.setBackground(frame());
-        l.setPadding(dp(22), dp(16), dp(22), dp(16));
+        l.setBackground(frame(CARD_FILL, CARD_LINE, 22));
+        l.setPadding(dp(26), dp(18), dp(26), dp(18));
         return l;
     }
 
-    /** A simple frame: a thin, faint white line around a slightly darker glass, with round corners. */
-    private GradientDrawable frame() {
+    private GradientDrawable frame(int fill, int line, int radius) {
         GradientDrawable d = new GradientDrawable();
-        d.setShape(GradientDrawable.RECTANGLE);
-        d.setCornerRadius(dp(16));
-        d.setColor(0x33000000);
-        d.setStroke(Math.max(1, dp(1)), 0x2EFFFFFF);
+        d.setCornerRadius(dp(radius));
+        d.setColor(fill);
+        d.setStroke(Math.max(1, dp(1)), line);
         return d;
     }
 
+    private LinearLayout.LayoutParams wrap() {
+        return new LinearLayout.LayoutParams(-2, -2);
+    }
+
     private LinearLayout.LayoutParams gap(int topDp) {
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2);
+        LinearLayout.LayoutParams p = wrap();
         p.topMargin = dp(topDp);
         return p;
     }
 
-    private TextView text(float sp, int strength, Typeface face, int gravity) {
+    private TextView text(float sp, int strength, Typeface face, int color) {
         TextView t = new TextView(ctx);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
-        int a = Math.round(255f * alpha / 100f * strength / 100f);
-        t.setTextColor(Color.argb(a, 255, 255, 255));
+        t.setTextColor(tint(color, strength));
         t.setTypeface(face);
-        t.setGravity(gravity);
         t.setIncludeFontPadding(false);
-        t.setSingleLine(gravity != Gravity.CENTER);
-        t.setShadowLayer(dp(8), 0, 0, 0xAA000000);
+        t.setSingleLine(true);
+        t.setShadowLayer(dp(6), 0, 0, 0x99000000);
         return t;
+    }
+
+    private int tint(int color, int strength) {
+        int a = Math.round(255f * level * strength / 100f);
+        return (color & 0x00FFFFFF) | (Math.min(255, a) << 24);
     }
 
     private int dp(float v) {
@@ -282,7 +319,7 @@ final class AmbientScreen {
     };
 
     private void drift() {
-        float r = dp(14);
+        float r = dp(8);
         content.animate()
                 .translationX((rnd.nextFloat() * 2 - 1) * r)
                 .translationY((rnd.nextFloat() * 2 - 1) * r)
@@ -300,8 +337,7 @@ final class AmbientScreen {
     }
 
     private String pickDhikr() {
-        boolean morning = isMorning();
-        String[] timed = morning ? Adhkar.MORNING : Adhkar.EVENING;
+        String[] timed = isMorning() ? Adhkar.MORNING : Adhkar.EVENING;
         List<String> all = new ArrayList<>();
         for (String s : timed) all.add(s);
         for (String s : Adhkar.GENERAL) all.add(s);
@@ -309,7 +345,6 @@ final class AmbientScreen {
         return all.get(dhikrIndex);
     }
 
-    /** From Fajr to Asr; without prayer times, 4:00 to 15:00. */
     private boolean isMorning() {
         int now = minutesNow();
         int fajr = 4 * 60, asr = 15 * 60;
@@ -324,23 +359,109 @@ final class AmbientScreen {
 
     private void render() {
         Date now = new Date();
-        boolean h24 = DateFormat.is24HourFormat(ctx);
-        clock.setText(fmt(h24 ? "HH:mm" : "h:mm", Locale.US).format(now));
-        date.setText(fmt("EEEE d MMMM", AR).format(now));
-        if (!TextUtils.isEmpty(hijri)) {
-            hijriView.setText(hijri);
-            hijriView.setVisibility(View.VISIBLE);
-        }
-        renderPrayers(h24);
+        Calendar c = Calendar.getInstance(RIYADH);
+        int h = c.get(Calendar.HOUR_OF_DAY) % 12;
+        clock.setText((h == 0 ? 12 : h) + ":" + String.format(Locale.US, "%02d", c.get(Calendar.MINUTE)));
+        ampm.setText(c.get(Calendar.HOUR_OF_DAY) < 12 ? "ص" : "م");
+        String d = fmt("EEEE، d MMMM", AR).format(now);
+        dateLine.setText(TextUtils.isEmpty(hijriText) ? d : d + "   ·   " + hijriText);
+
+        String rm = ramadanText;
+        if (!TextUtils.isEmpty(matchText)) rm = TextUtils.isEmpty(rm) ? matchText : rm + "      " + matchText;
+        ramadanLine.setText(rm);
+        ramadanLine.setVisibility(TextUtils.isEmpty(rm) ? View.GONE : View.VISIBLE);
+
+        String mk = goldText;
+        if (!TextUtils.isEmpty(usdText)) mk = TextUtils.isEmpty(mk) ? usdText : mk + "      " + usdText;
+        marketLine.setText(mk);
+        marketLine.setVisibility(TextUtils.isEmpty(mk) ? View.GONE : View.VISIBLE);
+
+        renderPrayers();
         renderSky();
     }
 
-    // Dawn, day, golden afternoon, sunset, night: the glow's colours follow the prayer times.
-    private static final int[] DAWN = {0xFF3A4FA0, 0xFF9A4A72, 0xFFB8744A};
-    private static final int[] DAY = {0xFF0E6A88, 0xFF1F4FA8, 0xFF1F7A6A};
-    private static final int[] GOLDEN = {0xFFB0682E, 0xFF8E3A48, 0xFF4E3A86};
-    private static final int[] DUSK = {0xFF3B2B7A, 0xFF7A3468, 0xFF1E4A7A};
-    private static final int[] NIGHT = {0xFF1E2A6E, 0xFF4A2A7A, 0xFF0F4C5C};
+    private void renderPrayers() {
+        if (!res.getBoolean(R.bool.show_prayers) || times == null || !today().equals(timesDay)) {
+            nextCard.setVisibility(View.INVISIBLE);
+            prayerCard.setVisibility(View.GONE);
+            return;
+        }
+        int now = minutesNow();
+        int next = -1, prev = -1;
+        for (int i : PRAYERS) {
+            int t = toMinutes(times[i], -1);
+            if (t > now && next < 0) next = i;
+            if (t <= now) prev = i;
+        }
+        int left, since;
+        if (next < 0) { // after Isha: Fajr tomorrow
+            next = 0;
+            left = toMinutes(times[0], 0) + 1440 - now;
+        } else {
+            left = toMinutes(times[next], now) - now;
+        }
+        if (prev < 0) { // before Fajr: since last night's Isha
+            prev = 5;
+            since = now + 1440 - toMinutes(times[5], 0);
+        } else {
+            since = now - toMinutes(times[prev], now);
+        }
+        nextName.setText(NAMES[next]);
+        nextTime.setText(ampmText(times[next]));
+        nextLeft.setText("باقي " + duration(left));
+        sinceLast.setText("مضى على " + NAMES[prev] + " " + duration(since));
+        nextCard.setVisibility(View.VISIBLE);
+
+        for (int c = 0; c < PRAYERS.length; c++) {
+            int i = PRAYERS[c];
+            boolean on = i == next;
+            prayerName[c].setText(NAMES[i]);
+            prayerTime[c].setText(ampmText(times[i]));
+            prayerCell[c].setBackground(on ? frame(0x40FFFFFF, 0x99FFFFFF, 16) : null);
+            prayerName[c].setTextColor(tint(Color.WHITE, on ? 100 : 75));
+            prayerTime[c].setTextColor(tint(on ? Color.WHITE : ACCENT, on ? 100 : 90));
+        }
+        prayerCard.setVisibility(View.VISIBLE);
+    }
+
+    /** "8 ساعات و44 دقيقة" */
+    private static String duration(int minutes) {
+        int h = Math.max(0, minutes) / 60, m = Math.max(0, minutes) % 60;
+        String hs = h == 0 ? "" : h == 1 ? "ساعة" : h == 2 ? "ساعتان" : h <= 10 ? h + " ساعات" : h + " ساعة";
+        String ms = m == 0 ? "" : m == 1 ? "دقيقة" : m == 2 ? "دقيقتان" : m <= 10 ? m + " دقائق" : m + " دقيقة";
+        if (hs.isEmpty() && ms.isEmpty()) return "أقل من دقيقة";
+        if (hs.isEmpty()) return ms;
+        if (ms.isEmpty()) return hs;
+        return hs + " و" + ms;
+    }
+
+    private static String days(int n) {
+        if (n == 1) return "يوم واحد";
+        if (n == 2) return "يومان";
+        if (n >= 3 && n <= 10) return n + " أيام";
+        return n + " يومًا";
+    }
+
+    /** "4:48 ص" */
+    private static String ampmText(String hhmm) {
+        try {
+            int h = Integer.parseInt(hhmm.substring(0, 2));
+            String m = hhmm.substring(3, 5);
+            String s = h < 12 ? "ص" : "م";
+            h = h % 12;
+            if (h == 0) h = 12;
+            return h + ":" + m + " " + s;
+        } catch (Exception e) {
+            return hhmm;
+        }
+    }
+
+    // Dawn, day, golden afternoon, sunset, night: the glow follows the prayer times.
+    private static final int[] DAWN = {0xFF2A3A80, 0xFF6A3A62, 0xFF7A5038};
+    private static final int[] DAY = {0xFF0E4E6A, 0xFF183C80, 0xFF175A50};
+    private static final int[] GOLDEN = {0xFF7A4A22, 0xFF62283A, 0xFF382A66};
+    private static final int[] DUSK = {0xFF2A1F5A, 0xFF5A264E, 0xFF16365A};
+    private static final int[] NIGHT = {0xFF16205A, 0xFF34205C, 0xFF0B3846};
 
     private void renderSky() {
         int now = minutesNow();
@@ -359,55 +480,6 @@ final class AmbientScreen {
         else glow.setPalette(NIGHT, true);
     }
 
-    private static final int[] PRAYERS = {0, 2, 3, 4, 5}; // sunrise is not a prayer
-
-    private void renderPrayers(boolean h24) {
-        if (!res.getBoolean(R.bool.show_prayers) || times == null || !today().equals(timesDay)) {
-            prayerBox.setVisibility(View.GONE);
-            return;
-        }
-        int now = minutesNow();
-        int next = -1;
-        for (int i : PRAYERS) {
-            if (toMinutes(times[i], -1) > now) {
-                next = i;
-                break;
-            }
-        }
-        if (next >= 0) {
-            int left = toMinutes(times[next], now) - now;
-            String in = left >= 60 ? (left / 60) + " س " + (left % 60) + " د" : left + " د";
-            nextPrayer.setText(NAMES[next] + " بعد " + in);
-        } else {
-            nextPrayer.setText("الفجر غدًا  " + clockText(times[0], h24));
-        }
-        int highlight = next >= 0 ? next : 0;
-        int bright = Math.round(255f * alpha / 100f);
-        int dim = Math.round(255f * alpha / 100f * 0.55f);
-        for (int c = 0; c < PRAYERS.length; c++) {
-            int i = PRAYERS[c];
-            boolean on = i == highlight;
-            prayerName[c].setText(NAMES[i]);
-            prayerTime[c].setText(clockText(times[i], h24));
-            prayerName[c].setTextColor(Color.argb(on ? bright : dim, 255, 255, 255));
-            prayerTime[c].setTextColor(Color.argb(on ? bright : dim, 255, 255, 255));
-        }
-        prayerBox.setVisibility(View.VISIBLE);
-    }
-
-    private static String clockText(String hhmm, boolean h24) {
-        if (h24) return hhmm;
-        try {
-            int h = Integer.parseInt(hhmm.substring(0, 2));
-            String m = hhmm.substring(3, 5);
-            h = h % 12;
-            if (h == 0) h = 12;
-            return h + ":" + m;
-        } catch (Exception e) {
-            return hhmm;
-        }
-    }
-
     // ---------------------------------------------------------------- refresh
 
     private void refreshIfDue() {
@@ -415,6 +487,10 @@ final class AmbientScreen {
         if (res.getBoolean(R.bool.show_prayers) && (!today().equals(timesDay) || now - prayersAt > 6 * HOUR)) {
             prayersAt = now - 6 * HOUR + RETRY;
             io.execute(this::fetchPrayers);
+        }
+        if (hijriYear > 0 && now - ramadanAt > 6 * HOUR) {
+            ramadanAt = now - 6 * HOUR + RETRY;
+            io.execute(this::fetchRamadan);
         }
         if (res.getBoolean(R.bool.show_weather) && now - weatherAt > 30 * MIN) {
             weatherAt = now - 30 * MIN + RETRY;
@@ -447,41 +523,92 @@ final class AmbientScreen {
             String day = today();
             String body = Net.get("https://api.aladhan.com/v1/timings/" + day + "?latitude=" + lat()
                     + "&longitude=" + lon() + "&method=" + res.getInteger(R.integer.method) + "&calendarMethod=UAQ");
-            parsePrayers(body, day);
+            applyPrayers(body, day);
             prefs.edit().putString("prayers", body).putString("prayersDay", day).apply();
             prayersAt = System.currentTimeMillis();
-            post(this::render);
         } catch (Exception e) {
             Log.w(TAG, "prayers", e);
         }
     }
 
-    private void parsePrayers(String body, String day) throws Exception {
+    private void applyPrayers(String body, String day) throws Exception {
         JSONObject data = new JSONObject(body).getJSONObject("data");
         JSONObject t = data.getJSONObject("timings");
-        String[] out = new String[KEYS.length];
+        final String[] out = new String[KEYS.length];
         for (int i = 0; i < KEYS.length; i++) out[i] = t.getString(KEYS[i]).trim().substring(0, 5);
-        String h = "";
         JSONObject date = data.optJSONObject("date");
         JSONObject hj = date == null ? null : date.optJSONObject("hijri");
+        String text = "";
+        int hd = 0, hm = 0, hy = 0;
         if (hj != null) {
             JSONObject month = hj.optJSONObject("month");
-            String mName = month == null ? "" : month.optString("ar", "");
-            h = trimZero(hj.optString("day", "")) + " " + mName + " " + hj.optString("year", "") + " هـ";
+            hd = parseInt(hj.optString("day"));
+            hy = parseInt(hj.optString("year"));
+            hm = month == null ? 0 : month.optInt("number", 0);
+            text = (hd + " " + (month == null ? "" : month.optString("ar", "")) + " " + hy + " هـ").trim();
         }
-        final String hijriText = h.trim();
-        final String[] parsed = out;
+        final String ht = text;
+        final int fd = hd, fm = hm, fy = hy;
         post(() -> {
-            times = parsed;
+            times = out;
             timesDay = day;
-            hijri = hijriText;
+            hijriText = ht;
+            boolean newYear = fy != hijriYear || fm != hijriMonth;
+            hijriDay = fd;
+            hijriMonth = fm;
+            hijriYear = fy;
+            if (newYear) ramadanAt = 0;
+            updateRamadanText();
+            render();
         });
+    }
+
+    /** First of Ramadan in the Gregorian calendar, from Aladhan's Umm al-Qura conversion. */
+    private void fetchRamadan() {
+        try {
+            int y = hijriMonth > 9 ? hijriYear + 1 : hijriYear;
+            String key = "ramadan" + y;
+            if (!prefs.contains(key)) {
+                String body = Net.get("https://api.aladhan.com/v1/hToG/01-09-" + y + "?calendarMethod=UAQ");
+                String g = new JSONObject(body).getJSONObject("data").getJSONObject("gregorian").getString("date");
+                prefs.edit().putString(key, g).apply();
+            }
+            ramadanAt = System.currentTimeMillis();
+            post(() -> {
+                updateRamadanText();
+                render();
+            });
+        } catch (Exception e) {
+            Log.w(TAG, "ramadan", e);
+        }
+    }
+
+    private void updateRamadanText() {
+        if (hijriMonth == 9) {
+            ramadanText = "🌙  رمضان مبارك · اليوم " + hijriDay;
+            return;
+        }
+        int y = hijriMonth > 9 ? hijriYear + 1 : hijriYear;
+        String g = prefs.getString("ramadan" + y, null);
+        if (g == null) {
+            ramadanText = "";
+            return;
+        }
+        try {
+            Date start = fmt("dd-MM-yyyy", Locale.US).parse(g);
+            Date today = fmt("dd-MM-yyyy", Locale.US).parse(today());
+            int n = (int) Math.round((start.getTime() - today.getTime()) / 86_400_000.0);
+            ramadanText = n > 0 ? "🌙  باقي على رمضان " + days(n) : "";
+        } catch (Exception e) {
+            ramadanText = "";
+        }
     }
 
     private void fetchWeather() {
         try {
             String body = Net.get("https://api.open-meteo.com/v1/forecast?latitude=" + lat() + "&longitude=" + lon()
-                    + "&current=temperature_2m,weather_code&timezone=auto");
+                    + "&current=temperature_2m,weather_code"
+                    + "&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=7&timezone=Asia%2FRiyadh");
             showWeather(body);
             prefs.edit().putString("weather", body).apply();
             weatherAt = System.currentTimeMillis();
@@ -491,29 +618,54 @@ final class AmbientScreen {
     }
 
     private void showWeather(String body) throws Exception {
-        JSONObject cur = new JSONObject(body).getJSONObject("current");
-        long temp = Math.round(cur.getDouble("temperature_2m"));
-        String sky = sky(cur.optInt("weather_code", -1));
-        final String tempText = temp + "°";
-        final String line = (sky.isEmpty() ? "" : sky + "  ·  ") + res.getString(R.string.place);
+        JSONObject o = new JSONObject(body);
+        JSONObject cur = o.getJSONObject("current");
+        final String now = icon(cur.optInt("weather_code", -1)) + "  " + Math.round(cur.getDouble("temperature_2m")) + "°";
+        JSONObject daily = o.optJSONObject("daily");
+        final List<String[]> list = new ArrayList<>();
+        if (daily != null) {
+            JSONArray d = daily.getJSONArray("time");
+            JSONArray code = daily.getJSONArray("weather_code");
+            JSONArray hi = daily.getJSONArray("temperature_2m_max");
+            JSONArray lo = daily.getJSONArray("temperature_2m_min");
+            SimpleDateFormat in = fmt("yyyy-MM-dd", Locale.US);
+            SimpleDateFormat dayName = fmt("EEEE", AR);
+            String todayIso = fmt("yyyy-MM-dd", Locale.US).format(new Date());
+            for (int i = 0; i < d.length() && list.size() < 7; i++) {
+                String iso = d.getString(i);
+                if (iso.compareTo(todayIso) < 0) continue;
+                String name = iso.equals(todayIso) ? "اليوم" : dayName.format(in.parse(iso));
+                list.add(new String[]{name, icon(code.optInt(i, -1)),
+                        Math.round(hi.getDouble(i)) + "°", Math.round(lo.getDouble(i)) + "°"});
+            }
+        }
         post(() -> {
-            weatherTemp.setText(tempText);
-            weather.setText(line);
-            weatherBox.setVisibility(View.VISIBLE);
+            cityNow.setText(now);
+            weatherDays.removeAllViews();
+            for (String[] day : list) {
+                LinearLayout cell = new LinearLayout(ctx);
+                cell.setOrientation(LinearLayout.VERTICAL);
+                cell.setGravity(Gravity.CENTER);
+                TextView n = text(16, 80, regular, Color.WHITE);
+                TextView t = text(19, 100, regular, Color.WHITE);
+                n.setText(day[0]);
+                t.setText(day[1] + " " + day[2] + "  " + day[3]);
+                cell.addView(n);
+                cell.addView(t, gap(10));
+                weatherDays.addView(cell, new LinearLayout.LayoutParams(0, -2, 1f));
+            }
+            weatherCard.setVisibility(View.VISIBLE);
         });
     }
 
-    private static String sky(int code) {
-        if (code == 0) return "صحو";
-        if (code == 1) return "صحو غالبًا";
-        if (code == 2) return "غائم جزئيًا";
-        if (code == 3) return "غائم";
-        if (code == 45 || code == 48) return "ضباب";
-        if (code >= 51 && code <= 57) return "رذاذ";
-        if (code >= 61 && code <= 67) return "مطر";
-        if (code >= 71 && code <= 77) return "ثلج";
-        if (code >= 80 && code <= 82) return "زخات مطر";
-        if (code >= 95) return "عاصفة رعدية";
+    private static String icon(int code) {
+        if (code == 0 || code == 1) return "☀︎";
+        if (code == 2) return "⛅";
+        if (code == 3 || code == 45 || code == 48) return "☁︎";
+        if (code >= 51 && code <= 67) return "🌧";
+        if (code >= 71 && code <= 77) return "❄︎";
+        if (code >= 80 && code <= 82) return "🌦";
+        if (code >= 95) return "⛈";
         return "";
     }
 
@@ -531,16 +683,12 @@ final class AmbientScreen {
     private void showGold(String body) throws Exception {
         double usdOunce = new JSONObject(body).getDouble("price");
         double rate = prefs.getFloat("sar", 3.75f);
-        long gram24 = Math.round(usdOunce * rate / 31.1034768);
-        long gram21 = Math.round(usdOunce * rate / 31.1034768 * 21.0 / 24.0);
-        final String line24 = "ذهب عيار 24  ·  " + gram24 + " ر.س";
-        final String line21 = "ذهب عيار 21  ·  " + gram21 + " ر.س";
+        long g24 = Math.round(usdOunce * rate / 31.1034768);
+        long g21 = Math.round(usdOunce * rate / 31.1034768 * 21.0 / 24.0);
+        final String line = "ذهب 24: " + g24 + " ر.س   ·   ذهب 21: " + g21 + " ر.س";
         post(() -> {
-            gold.setText(line24);
-            gold21.setText(line21);
-            gold.setVisibility(View.VISIBLE);
-            gold21.setVisibility(View.VISIBLE);
-            goldBox.setVisibility(View.VISIBLE);
+            goldText = line;
+            render();
         });
     }
 
@@ -557,33 +705,17 @@ final class AmbientScreen {
     }
 
     private void showUsd(double sar) {
-        final String line = "الدولار  " + String.format(Locale.US, "%.2f", sar) + "  ر.س";
+        final String line = "الدولار: " + String.format(Locale.US, "%.2f", sar) + " ر.س";
         post(() -> {
-            usd.setText(line);
-            usd.setVisibility(View.VISIBLE);
-            goldBox.setVisibility(View.VISIBLE);
+            usdText = line;
+            render();
         });
     }
 
     private void fetchMatch() {
         try {
             String id = prefs.getString("teamId", res.getString(R.string.team_id));
-            if (TextUtils.isEmpty(id)) {
-                String q = java.net.URLEncoder.encode(res.getString(R.string.team_query), "UTF-8").replace("+", "%20");
-                JSONArray teams = new JSONObject(Net.get(
-                        "https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=" + q)).optJSONArray("teams");
-                if (teams != null) {
-                    for (int i = 0; i < teams.length(); i++) {
-                        JSONObject t = teams.getJSONObject(i);
-                        if (t.optString("strCountry").contains("Saudi") && "Soccer".equals(t.optString("strSport"))) {
-                            id = t.optString("idTeam");
-                            break;
-                        }
-                    }
-                }
-                if (TextUtils.isEmpty(id)) return;
-                prefs.edit().putString("teamId", id).apply();
-            }
+            if (TextUtils.isEmpty(id)) return;
             String body = Net.get("https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=" + id);
             showMatch(body, id);
             prefs.edit().putString("match", body).apply();
@@ -595,10 +727,10 @@ final class AmbientScreen {
 
     private void showMatch(String body, String teamId) throws Exception {
         JSONArray events = new JSONObject(body).optJSONArray("events");
-        String line = null;
+        String line = "";
         long now = System.currentTimeMillis();
         if (events != null) {
-            for (int i = 0; i < events.length() && line == null; i++) {
+            for (int i = 0; i < events.length() && line.isEmpty(); i++) {
                 JSONObject e = events.getJSONObject(i);
                 String stamp = e.optString("strTimestamp", "");
                 Date when;
@@ -612,21 +744,14 @@ final class AmbientScreen {
                 if (when == null || when.getTime() < now - 2 * HOUR || when.getTime() > now + 14 * 24 * HOUR) continue;
                 boolean home = teamId.equals(e.optString("idHomeTeam"));
                 String other = home ? e.optString("strAwayTeam") : e.optString("strHomeTeam");
-                SimpleDateFormat day = fmt("EEEE", AR);
-                SimpleDateFormat hm = fmt(DateFormat.is24HourFormat(ctx) ? "HH:mm" : "h:mm a", AR);
-                line = "الأهلي × " + arabicTeam(other) + "\n" + day.format(when) + "  " + hm.format(when);
+                line = "⚽  الأهلي × " + arabicTeam(other) + " · " + fmt("EEEE", AR).format(when) + " "
+                        + ampmText(fmt("HH:mm", Locale.US).format(when));
             }
         }
         final String text = line;
         post(() -> {
-            if (text == null) {
-                matchBox.setVisibility(View.GONE);
-            } else {
-                String[] parts = text.split("\n", 2);
-                match.setText(parts[0]);
-                matchWhen.setText(parts.length > 1 ? parts[1] : "");
-                matchBox.setVisibility(View.VISIBLE);
-            }
+            matchText = text;
+            render();
         });
     }
 
@@ -636,20 +761,7 @@ final class AmbientScreen {
         try {
             String p = prefs.getString("prayers", null);
             String day = prefs.getString("prayersDay", "");
-            if (p != null && today().equals(day)) {
-                JSONObject data = new JSONObject(p).getJSONObject("data");
-                JSONObject t = data.getJSONObject("timings");
-                String[] out = new String[KEYS.length];
-                for (int i = 0; i < KEYS.length; i++) out[i] = t.getString(KEYS[i]).trim().substring(0, 5);
-                times = out;
-                timesDay = day;
-                JSONObject hj = data.getJSONObject("date").optJSONObject("hijri");
-                if (hj != null) {
-                    JSONObject month = hj.optJSONObject("month");
-                    hijri = (trimZero(hj.optString("day", "")) + " " + (month == null ? "" : month.optString("ar", ""))
-                            + " " + hj.optString("year", "") + " هـ").trim();
-                }
-            }
+            if (p != null && today().equals(day)) applyPrayersNow(p, day);
         } catch (Exception e) {
             Log.w(TAG, "cache prayers", e);
         }
@@ -666,10 +778,29 @@ final class AmbientScreen {
         if (prefs.contains("sar") && res.getBoolean(R.bool.show_usd)) showUsd(prefs.getFloat("sar", 3.75f));
         try {
             String m = prefs.getString("match", null);
-            String id = prefs.getString("teamId", "");
+            String id = prefs.getString("teamId", res.getString(R.string.team_id));
             if (m != null && !TextUtils.isEmpty(id) && res.getBoolean(R.bool.show_match)) showMatch(m, id);
         } catch (Exception ignored) {
         }
+    }
+
+    /** Same as applyPrayers, but synchronous, so the first frame already has the times. */
+    private void applyPrayersNow(String body, String day) throws Exception {
+        JSONObject data = new JSONObject(body).getJSONObject("data");
+        JSONObject t = data.getJSONObject("timings");
+        String[] out = new String[KEYS.length];
+        for (int i = 0; i < KEYS.length; i++) out[i] = t.getString(KEYS[i]).trim().substring(0, 5);
+        times = out;
+        timesDay = day;
+        JSONObject hj = data.getJSONObject("date").optJSONObject("hijri");
+        if (hj != null) {
+            JSONObject month = hj.optJSONObject("month");
+            hijriDay = parseInt(hj.optString("day"));
+            hijriYear = parseInt(hj.optString("year"));
+            hijriMonth = month == null ? 0 : month.optInt("number", 0);
+            hijriText = (hijriDay + " " + (month == null ? "" : month.optString("ar", "")) + " " + hijriYear + " هـ").trim();
+        }
+        updateRamadanText();
     }
 
     // ---------------------------------------------------------------- helpers
@@ -709,6 +840,14 @@ final class AmbientScreen {
         }
     }
 
+    private static int parseInt(String s) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     private static final String[][] TEAMS = {
             {"Al-Nassr", "النصر"}, {"Al-Hilal", "الهلال"}, {"Al-Ittihad", "الاتحاد"}, {"Al-Shabab", "الشباب"},
             {"Al-Ettifaq", "الاتفاق"}, {"Al-Taawoun", "التعاون"}, {"Al-Fateh", "الفتح"}, {"Al-Fayha", "الفيحاء"},
@@ -722,10 +861,5 @@ final class AmbientScreen {
     private static String arabicTeam(String name) {
         for (String[] t : TEAMS) if (t[0].equalsIgnoreCase(name.trim())) return t[1];
         return name;
-    }
-
-    private static String trimZero(String s) {
-        while (s.length() > 1 && s.charAt(0) == '0') s = s.substring(1);
-        return s;
     }
 }
