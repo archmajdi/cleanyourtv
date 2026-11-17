@@ -88,7 +88,7 @@ final class AmbientScreen {
     private String hijriText = "";
     private int hijriDay, hijriMonth, hijriYear;
     private String ramadanText = "", matchText = "", goldText = "", usdText = "";
-    private long weatherAt, goldAt, usdAt, matchAt, prayersAt, ramadanAt;
+    private long weatherAt, goldAt, usdAt, matchAt, prayersAt, ramadanAt, btcAt;
     private int dhikrIndex;
 
     AmbientScreen(Context context) {
@@ -500,7 +500,11 @@ final class AmbientScreen {
             goldAt = now - HOUR + RETRY;
             io.execute(this::fetchGold);
         }
-        if (res.getBoolean(R.bool.show_usd) && now - usdAt > 6 * HOUR) {
+        if (res.getBoolean(R.bool.show_usd) && now - btcAt > 30 * MIN) {
+            btcAt = now - 30 * MIN + RETRY;
+            io.execute(this::fetchBtc);
+        }
+        if (now - usdAt > 6 * HOUR) {
             usdAt = now - 6 * HOUR + RETRY;
             io.execute(this::fetchUsd);
         }
@@ -712,7 +716,27 @@ final class AmbientScreen {
     }
 
     private void showUsd(double sar) {
-        final String line = "الدولار: " + String.format(Locale.US, "%.2f", sar) + " ر.س";
+        // The rate is kept only to convert gold to riyals; Bitcoin takes the dollar's place on screen.
+    }
+
+    private void fetchBtc() {
+        try {
+            String body = Net.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true");
+            showBtc(body);
+            prefs.edit().putString("btc", body).apply();
+            btcAt = System.currentTimeMillis();
+        } catch (Exception e) {
+            Log.w(TAG, "btc", e);
+        }
+    }
+
+    private void showBtc(String body) throws Exception {
+        JSONObject b = new JSONObject(body).getJSONObject("bitcoin");
+        long price = Math.round(b.getDouble("usd"));
+        double ch = b.optDouble("usd_24h_change", 0);
+        String arrow = ch >= 0 ? "▲" : "▼";
+        final String line = "₿ بيتكوين: " + String.format(Locale.US, "%,d", price) + " $  "
+                + arrow + " " + String.format(Locale.US, "%.1f", Math.abs(ch)) + "%";
         post(() -> {
             usdText = line;
             render();
@@ -782,7 +806,11 @@ final class AmbientScreen {
             if (g != null && res.getBoolean(R.bool.show_gold)) showGold(g);
         } catch (Exception ignored) {
         }
-        if (prefs.contains("sar") && res.getBoolean(R.bool.show_usd)) showUsd(prefs.getFloat("sar", 3.75f));
+        try {
+            String b = prefs.getString("btc", null);
+            if (b != null && res.getBoolean(R.bool.show_usd)) showBtc(b);
+        } catch (Exception ignored) {
+        }
         try {
             String m = prefs.getString("match", null);
             String id = prefs.getString("teamId", res.getString(R.string.team_id));
