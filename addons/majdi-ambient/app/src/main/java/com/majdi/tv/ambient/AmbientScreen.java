@@ -647,11 +647,18 @@ final class AmbientScreen {
                 cell.setOrientation(LinearLayout.VERTICAL);
                 cell.setGravity(Gravity.CENTER);
                 TextView n = text(16, 80, regular, Color.WHITE);
-                TextView t = text(19, 100, regular, Color.WHITE);
+                TextView ic = text(22, 100, regular, Color.WHITE);
+                TextView t = text(18, 100, regular, Color.WHITE);
                 n.setText(day[0]);
-                t.setText(day[1] + " " + day[2] + "  " + day[3]);
+                ic.setText(day[1]);
+                t.setText(day[2] + " / " + day[3]);
+                n.setGravity(Gravity.CENTER);
+                ic.setGravity(Gravity.CENTER);
+                t.setGravity(Gravity.CENTER);
+                t.setTextDirection(View.TEXT_DIRECTION_LTR);
                 cell.addView(n);
-                cell.addView(t, gap(10));
+                cell.addView(ic, gap(8));
+                cell.addView(t, gap(8));
                 weatherDays.addView(cell, new LinearLayout.LayoutParams(0, -2, 1f));
             }
             weatherCard.setVisibility(View.VISIBLE);
